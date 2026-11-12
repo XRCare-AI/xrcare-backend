@@ -6,7 +6,7 @@ from flask import Blueprint, request, current_app, g, jsonify
 from flask_restful import Api, Resource
 
 from api.jwt_authorize import token_required
-from model.site import site_settings
+from model.survey import QUESTIONS, validate_survey
 from model.user import User
 
 
@@ -37,23 +37,6 @@ def login_response(user, status=200):
     resp = jsonify({"message": f"Authentication for {user.uid} successful", "user": user.read()})
     resp.status_code = status
     return set_token_cookie(resp, token, current_app.config["JWT_TOKEN_MAX_AGE"])
-
-
-def validate_survey(survey, answers):
-    """ Every question needs a valid answer: one option id, or a list of ids for multiple-choice questions """
-    for question in survey.get('questions', []):
-        options = {option['id'] for option in question['options']}
-        answer = answers.get(question['id'])
-        if question.get('multiple'):
-            limit = question.get('max') or len(options)
-            if not isinstance(answer, list) or not answer or not set(answer) <= options or len(set(answer)) > limit:
-                return f"Please answer: {question['title']}"
-        elif answer not in options:
-            return f"Please answer: {question['title']}"
-    unknown = set(answers) - {question['id'] for question in survey.get('questions', [])}
-    if unknown:
-        return f"Unknown question: {sorted(unknown)[0]}"
-    return None
 
 
 class UserAPI:
@@ -144,7 +127,7 @@ class UserAPI:
             """ Log out by expiring the token cookie """
             return set_token_cookie(jsonify({"message": "Logged out"}), '', 0)
 
-    class _Survey(Resource):  # First-login survey (questions are the "survey" site setting)
+    class _Survey(Resource):  # The current user's first-login survey answers (questions: model/survey.py)
         @token_required()
         def get(self):
             return jsonify({"survey": g.current_user.survey, "needs_survey": g.current_user.survey is None})
@@ -156,12 +139,17 @@ class UserAPI:
             answers = body.get('answers')
             if not isinstance(answers, dict):
                 return {"message": "Send your answers as {answers: {question: choice}}"}, 400
-            error = validate_survey(site_settings().get('survey', {}), answers)
+            error = validate_survey(answers)
             if error:
                 return {"message": error}, 400
             return jsonify(g.current_user.save_survey(answers).read())
 
+    class _SurveyQuestions(Resource):  # The survey's questions (public: no answers in here)
+        def get(self):
+            return jsonify(QUESTIONS)
+
     api.add_resource(_ID, '/id')
+    api.add_resource(_SurveyQuestions, '/survey')
     api.add_resource(_Survey, '/user/survey')
     api.add_resource(_CRUD, '/user')
     api.add_resource(_Security, '/authenticate')

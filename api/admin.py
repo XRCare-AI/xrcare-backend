@@ -2,14 +2,12 @@
 
 Uses a signed Flask session cookie, separate from the frontend's JWT cookie, and only lets Admin users in.
 """
-import json
 from functools import wraps
 
 from flask import Blueprint, render_template, request, redirect, url_for, session
 
 from model.article import Article
 from model.contact import ContactMessage
-from model.site import Page, Section, NavLink, site_settings
 from model.user import User
 
 
@@ -84,18 +82,6 @@ def utable():
     return render_template('table.html', title='User Management', columns=columns, rows=rows)
 
 
-@admin.route('/sections/')
-@admin_required
-def sections():
-    columns = [('Page', 'page'), ('Position', 'position'), ('Anchor', 'slug'), ('Name', 'name'), ('Layout', 'layout'),
-               ('Theme', 'theme'), ('Content', 'content_json'), ('Updated', 'updated')]
-    rows = [section.read() for page in Page.query.order_by(Page.id).all() for section in page.sections]
-    for row in rows:
-        row['content_json'] = json.dumps(row['content'], ensure_ascii=False)[:300]
-        row['updated'] = (row['updated_at'] or '')[:10]
-    return render_template('table.html', title='Page Sections', columns=columns, rows=rows)
-
-
 @admin.route('/articles/')
 @admin_required
 def articles():
@@ -105,17 +91,6 @@ def articles():
     for row in rows:
         row['category_names'] = ', '.join(c['name'] for c in row['categories'])
     return render_template('table.html', title='Articles', columns=columns, rows=rows)
-
-
-@admin.route('/settings/')
-@admin_required
-def settings():
-    columns = [('Setting', 'key'), ('Value', 'value')]
-    rows = [{'key': k, 'value': v} for k, v in site_settings().items()]
-    for link in NavLink.query.order_by(NavLink._position).all():
-        link = link.read()
-        rows.append({'key': f'menu {link["position"]}', 'value': f'{link["label"]} → {link["url"]}'})
-    return render_template('table.html', title='Site Settings and Menu', columns=columns, rows=rows)
 
 
 @admin.route('/contacts/')
