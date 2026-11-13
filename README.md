@@ -41,6 +41,8 @@ To add someone, add `('Name', 'username')` to `ADMINS` or `USERS` and a `USERNAM
 - `api/jwt_authorize.py`: `@token_required` JWT cookie guard.
 - `model/article.py`, `api/article.py`: articles (blog posts) with categories, archives, search and popular posts.
 - `model/contact.py`, `api/contact.py`: the "Ready to Transform Your Care Team?" form. `FIELDS` defines the form; messages are stored in `contact_messages`.
+- `model/chat.py`, `api/chat.py`: the public chat bubble. The model holds the bot's instructions (`SYSTEM_PROMPT`), its wording (`WIDGET`), the personal details it blocks (`PRIVATE_INFO_PATTERNS`) and the AI services to try (`PROVIDERS`: Gemini, then Groq); `get_reply(history)` checks the conversation and tries each service in turn.
+- `model/rate_limit.py`: limits each visitor (by IP) to 10 chat messages a minute; adapted from OCS flask's `throttled()`.
 - `api/admin.py`, `templates/`: admin pages served by the backend (same home and login pages as OCS flask): users, articles, contact messages.
 - `.env`: secret key and account passwords (not committed).
 - `instance/volumes/user_management.db`: SQLite database (created on first run, not committed).
@@ -63,6 +65,8 @@ Databases made before the site content moved to the frontend still have `site_se
 | POST | `/api/contact` | Send the contact form `{first_name, last_name, email, phone?, organization?, comment?}` (anyone) |
 | GET | `/api/contact` | Admin only: every message, newest first |
 | PUT | `/api/contact` | Admin only: mark a message handled `{id, handled}` |
+| GET | `/api/chat` | The chat bubble's wording and `available` (true if an AI key is set) |
+| POST | `/api/chat` | Ask the assistant `{messages: [{role: "user"\|"assistant", content}]}`; returns `{reply, provider}`. Anyone; 10 per minute per visitor (429 after that) |
 | POST | `/api/authenticate` | Log in `{uid, password}` (uid can be the username or email); sets an httpOnly JWT cookie |
 | DELETE | `/api/authenticate` | Log out |
 | GET | `/api/id` | Current user's profile |
@@ -73,6 +77,18 @@ Databases made before the site content moved to the frontend still have `site_se
 | PUT | `/api/user/survey` | Save `{answers: {question_id: option_id or [option_ids]}}`; checked against `model/survey.py` |
 | GET | `/api/user` | Admin only: list every user |
 | DELETE | `/api/user` | Admin only: delete a user `{uid}` |
+
+## Chatbot
+A public chat bubble on every page answers general questions about XRCare. It only appears when at least one AI key is in `.env`:
+```
+GEMINI_API_KEY=...   # tried first (aistudio.google.com)
+GROQ_API_KEY=...     # backup if Gemini fails (console.groq.com)
+GEMINI_MODEL=...     # optional, default gemini-flash-latest
+GROQ_MODEL=...       # optional, default llama-3.3-70b-versatile
+```
+Keys stay in the backend's `.env` and are never committed. The bot is told to give general information only (no medical advice, no prices or unsupported claims), and messages containing obvious personal details (email, phone, ID numbers, dates, medical record or insurance terms) are refused before reaching Gemini or Groq. That check cannot catch names or described conditions, so the bubble also asks visitors not to share them.
+
+**Rate limit:** 10 messages per minute per IP address. One IP can be shared (a school or office network) or changed (switching networks), and the counts reset when the server restarts. When the backend is deployed behind a proxy, wrap the app in Werkzeug's `ProxyFix` so `request.remote_addr` is the visitor's IP rather than the proxy's.
 
 ### Admin pages
 Log in at `http://localhost:8620/login` with an Admin account, then use the **Data** menu:
