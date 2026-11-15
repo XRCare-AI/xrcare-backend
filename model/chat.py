@@ -29,12 +29,17 @@ Facts:
 - Contact: info@XRCare.ai or +1-858-324-4114.
 
 Rules:
-- Answer in 1 to 3 short sentences of plain text, with no markdown, lists or headings.
-- Only answer general questions about XRCare and this website. Politely decline anything else.
-- Never give medical advice, diagnoses or treatment information; say a clinician should be asked.
-- Do not state or guess prices, availability, release dates, customers, partners, certifications, regulatory
-  status, results or any capability not in the facts above. Say you don't have that information and point to
-  the Contact page.
+- Be warm, friendly and professional. Answer in 1 to 3 short sentences of plain text, with no markdown, lists
+  or headings.
+- Help with general questions about XRCare, who it is for, and finding things on this website.
+- If a question is related to XRCare but the facts above don't fully answer it (for example hardware, prices,
+  availability, customers, partners, certifications or results), first share whatever the facts do say that
+  is relevant, then say you don't have details on that specific point and suggest the Contact page.
+  Never invent or guess details that are not in the facts.
+- Never give medical advice, diagnoses or treatment information; kindly say a clinician should be asked.
+- For questions unrelated to XRCare, briefly and kindly say you can only help with questions about XRCare.
+- If someone shares something personal or emotional, respond briefly with kindness, do not ask for details,
+  and gently say this chat is only for questions about XRCare.
 - Never ask for personal, health or patient information. If someone shares it, do not repeat it, and remind
   them not to share it here."""
 
@@ -71,13 +76,14 @@ PRIVATE_INFO_PATTERNS = [
 # Limits so one visitor cannot run up the API bill or send a huge request (the per-minute limit is in model/rate_limit.py)
 MAX_MESSAGES = 20         # only the most recent messages are sent to the AI
 MAX_MESSAGE_CHARS = 1000  # per message
-TIMEOUT_SECONDS = 20      # give up on a provider that hangs, so the next one can be tried
+TIMEOUT_SECONDS = 45      # give up on a provider that hangs, so the next one can be tried (OCS's Gemini API allows 90)
 
 # Which AI services to try, in order: Gemini first, Groq as the backup if Gemini fails or has no key.
-# Model names can be changed in .env without touching code, because providers rename models often.
+# Model names can be changed in .env without touching code, because providers rename and retire models often.
+# Defaults tested Nov 2026: Flash-Lite answers in 1-3 s (gemini-flash-latest timed out); Groq retired llama-3.3.
 PROVIDERS = [
-    {'name': 'gemini', 'key_env': 'GEMINI_API_KEY', 'model_env': 'GEMINI_MODEL', 'default_model': 'gemini-flash-latest'},
-    {'name': 'groq', 'key_env': 'GROQ_API_KEY', 'model_env': 'GROQ_MODEL', 'default_model': 'llama-3.3-70b-versatile'},
+    {'name': 'gemini', 'key_env': 'GEMINI_API_KEY', 'model_env': 'GEMINI_MODEL', 'default_model': 'gemini-3.5-flash-lite'},
+    {'name': 'groq', 'key_env': 'GROQ_API_KEY', 'model_env': 'GROQ_MODEL', 'default_model': 'openai/gpt-oss-20b'},
 ]
 
 
@@ -164,6 +170,16 @@ def ask_groq(history, api_key, model):
     return response.json()['choices'][0]['message']['content']
 
 
+def describe_error(error):
+    """ Short description of a provider failure for the log. The providers explain errors in the response body
+    (e.g. "model not found"), which is more useful than the status code alone. Never includes the API key,
+    because the key is sent in a header, not in the URL or body. """
+    response = getattr(error, 'response', None)
+    if response is not None:
+        return f"{response.status_code} {response.text[:200]}"
+    return str(error)
+
+
 # Matches each provider's name in PROVIDERS to the procedure that talks to it
 ASK = {'gemini': ask_gemini, 'groq': ask_groq}
 
@@ -187,10 +203,12 @@ def get_reply(history):
         try:
             reply = ASK[provider['name']](history, api_key, model).strip()
         except (requests.RequestException, KeyError, IndexError, ValueError) as error:
-            # Log the real error for us (never the key), then fall through to the next provider
-            print(f"Chat: {provider['name']} failed: {error}")
+            # Log the real error for us (never the key), then fall through to the next provider.
+            # flush=True writes it to the log file right away instead of holding it in memory.
+            print(f"Chat: {provider['name']} failed: {describe_error(error)}", flush=True)
             continue
         if reply:
+            print(f"Chat: answered by {provider['name']} ({model})", flush=True)
             return {'reply': reply, 'provider': provider['name']}
 
     # 3. Every provider was skipped or failed

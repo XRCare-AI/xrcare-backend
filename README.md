@@ -83,10 +83,12 @@ A public chat bubble on every page answers general questions about XRCare. It on
 ```
 GEMINI_API_KEY=...   # tried first (aistudio.google.com)
 GROQ_API_KEY=...     # backup if Gemini fails (console.groq.com)
-GEMINI_MODEL=...     # optional, default gemini-flash-latest
-GROQ_MODEL=...       # optional, default llama-3.3-70b-versatile
+GEMINI_MODEL=...     # optional, default gemini-3.5-flash-lite
+GROQ_MODEL=...       # optional, default openai/gpt-oss-20b
 ```
 Keys stay in the backend's `.env` and are never committed. The bot is told to give general information only (no medical advice, no prices or unsupported claims), and messages containing obvious personal details (email, phone, ID numbers, dates, medical record or insurance terms) are refused before reaching Gemini or Groq. That check cannot catch names or described conditions, so the bubble also asks visitors not to share them.
+
+The backend log shows which service answered each message (`Chat: answered by gemini`) and why one failed (`Chat: gemini failed: ...`).
 
 **Rate limit:** 10 messages per minute per IP address. One IP can be shared (a school or office network) or changed (switching networks), and the counts reset when the server restarts. When the backend is deployed behind a proxy, wrap the app in Werkzeug's `ProxyFix` so `request.remote_addr` is the visitor's IP rather than the proxy's.
 
