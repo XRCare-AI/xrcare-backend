@@ -160,8 +160,8 @@ def clean_history(history):
     return cleaned
 
 
-def ask_gemini(history, api_key, model):
-    """ Send the conversation to Google Gemini and return its answer as text """
+def ask_gemini(history, api_key, model, system=SYSTEM_PROMPT, json_only=False):
+    """ Send the conversation to Google Gemini and return its answer as text (json_only: ask for JSON) """
     # Gemini calls the bot's turns "model" instead of "assistant", and wraps text in "parts"
     contents = [
         {'role': 'model' if m['role'] == 'assistant' else 'user', 'parts': [{'text': m['content']}]}
@@ -170,7 +170,8 @@ def ask_gemini(history, api_key, model):
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         headers={'x-goog-api-key': api_key},  # in a header, not the URL, so the key never shows up in logs
-        json={'systemInstruction': {'parts': [{'text': SYSTEM_PROMPT}]}, 'contents': contents},
+        json={'systemInstruction': {'parts': [{'text': system}]}, 'contents': contents,
+              **({'generationConfig': {'responseMimeType': 'application/json'}} if json_only else {})},
         timeout=TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -178,14 +179,15 @@ def ask_gemini(history, api_key, model):
     return ''.join(part.get('text', '') for part in parts)
 
 
-def ask_groq(history, api_key, model):
-    """ Send the conversation to Groq and return its answer as text """
+def ask_groq(history, api_key, model, system=SYSTEM_PROMPT, json_only=False):
+    """ Send the conversation to Groq and return its answer as text (json_only: ask for JSON) """
     # Groq uses the OpenAI message format: the system prompt is just the first message
-    messages = [{'role': 'system', 'content': SYSTEM_PROMPT}] + history
+    messages = [{'role': 'system', 'content': system}] + history
     response = requests.post(
         'https://api.groq.com/openai/v1/chat/completions',
         headers={'Authorization': f'Bearer {api_key}'},
-        json={'model': model, 'messages': messages, 'max_tokens': 300},
+        json={'model': model, 'messages': messages, 'max_tokens': 1000 if json_only else 300,
+              **({'response_format': {'type': 'json_object'}} if json_only else {})},
         timeout=TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -206,6 +208,30 @@ def describe_error(error):
 ASK = {'gemini': ask_gemini, 'groq': ask_groq}
 
 
+def ask_providers(history, system=SYSTEM_PROMPT, json_only=False):
+    """ Try each provider in PROVIDERS in turn and return (answer text, provider name) from the first that answers.
+    history must already be checked (clean_history). Also used by model/ai_theme.py with its own system prompt.
+    Raises ChatError(503) if every provider was skipped or failed. """
+    for provider in PROVIDERS:
+        api_key = os.environ.get(provider['key_env'])
+        if not api_key:
+            continue  # no key in .env for this provider: skip it
+        model = os.environ.get(provider['model_env']) or provider['default_model']
+        try:
+            reply = ASK[provider['name']](history, api_key, model, system, json_only).strip()
+        except (requests.RequestException, KeyError, IndexError, ValueError) as error:
+            # Log the real error for us (never the key), then fall through to the next provider.
+            # flush=True writes it to the log file right away instead of holding it in memory.
+            print(f"Chat: {provider['name']} failed: {describe_error(error)}", flush=True)
+            continue
+        if reply:
+            print(f"Chat: answered by {provider['name']} ({model})", flush=True)
+            return reply, provider['name']
+
+    # Every provider was skipped or failed
+    raise ChatError("The assistant isn't available right now. Please try again later or use the Contact page.", 503)
+
+
 def get_reply(history):
     """ Answer the visitor's latest message.
 
@@ -215,26 +241,9 @@ def get_reply(history):
     """
     # 1. Check the conversation first, so nothing bad or private is ever sent to an AI service
     history = clean_history(history)
-
     # 2. Try each provider in order and stop at the first good answer, so the chat keeps working if one is down
-    for provider in PROVIDERS:
-        api_key = os.environ.get(provider['key_env'])
-        if not api_key:
-            continue  # no key in .env for this provider: skip it
-        model = os.environ.get(provider['model_env']) or provider['default_model']
-        try:
-            reply = ASK[provider['name']](history, api_key, model).strip()
-        except (requests.RequestException, KeyError, IndexError, ValueError) as error:
-            # Log the real error for us (never the key), then fall through to the next provider.
-            # flush=True writes it to the log file right away instead of holding it in memory.
-            print(f"Chat: {provider['name']} failed: {describe_error(error)}", flush=True)
-            continue
-        if reply:
-            print(f"Chat: answered by {provider['name']} ({model})", flush=True)
-            return {'reply': reply, 'provider': provider['name']}
-
-    # 3. Every provider was skipped or failed
-    raise ChatError("The assistant isn't available right now. Please try again later or use the Contact page.", 503)
+    reply, provider = ask_providers(history)
+    return {'reply': reply, 'provider': provider}
 
 
 def is_available():

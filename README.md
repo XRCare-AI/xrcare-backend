@@ -38,6 +38,8 @@ To add someone, add `('Name', 'username')` to `ADMINS` or `USERS` and a `USERNAM
 - `__init__.py`: Flask `app`, CORS (allowed frontend origins), accounts, settings, and `db`.
 - `model/user.py`, `api/user.py`: `User` model, `initUsers()`, and the REST API for sign up, log in/out, profile and the first-login survey. `GET /api/id` includes `survey` and `needs_survey`; columns added since a database was made are added on start.
 - `model/survey.py`: the first-login survey's questions (`QUESTIONS`, served at `GET /api/survey`) and `validate_survey()` for a user's answers.
+- `model/preferences.py`: what a user's site preferences may hold (`DEFAULTS` = the site as designed, the allowed `FONTS`, `BUTTON_STYLES`, `LANGUAGES`) and `clean_preferences()`, which checks a set from the browser. Stored as JSON in `users._preferences` and returned in `GET /api/id` as `preferences`. Keep the lists in step with the frontend's `js/theme.js`.
+- `model/ai_theme.py`: "Create with AI" on the Preferences page: asks the chat bubble's AI services (`ask_providers()` in `model/chat.py`) for a theme and makes sure its text is readable.
 - `api/jwt_authorize.py`: `@token_required` JWT cookie guard.
 - `model/article.py`, `api/article.py`: articles (blog posts) with categories, archives, search and popular posts.
 - `model/contact.py`, `api/contact.py`: the "Ready to Transform Your Care Team?" form. `FIELDS` defines the form; messages are stored in `contact_messages`.
@@ -75,6 +77,10 @@ Databases made before the site content moved to the frontend still have `site_se
 | GET | `/api/survey` | The first-login survey's questions (anyone) |
 | GET | `/api/user/survey` | Current user's first-login survey answers, and `needs_survey` |
 | PUT | `/api/user/survey` | Save `{answers: {question_id: option_id or [option_ids]}}`; checked against `model/survey.py` |
+| GET | `/api/user/preferences` | Current user's site preferences (theme colors, font, text size, button style, language, voice, head tracking, saved themes) |
+| PUT | `/api/user/preferences` | Save the whole set; checked by `model/preferences.py` (400 with a message if a value isn't allowed) |
+| DELETE | `/api/user/preferences` | Back to the site as designed |
+| POST | `/api/user/preferences/ai-theme` | `{prompt}` -> `{name, description, bg, text, accent, selectionColor, font, buttonStyle}`; logged-in users, 10 per minute |
 | GET | `/api/user` | Admin only: list every user |
 | DELETE | `/api/user` | Admin only: delete a user `{uid}` |
 

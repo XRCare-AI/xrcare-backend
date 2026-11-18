@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from __init__ import app, db
+from model.preferences import DEFAULTS
 
 
 EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
@@ -32,6 +33,8 @@ class User(db.Model):
         created_at (Column): When the account was created.
         _survey (Column): JSON answers to the first-login survey ({question_id: answer}), or None if not taken.
         survey_completed_at (Column): When the survey was answered.
+        _preferences (Column): JSON site preferences (theme, text size, language, voice...; model/preferences.py),
+            or None for the site as designed.
     """
     __tablename__ = 'users'
 
@@ -46,6 +49,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     _survey = db.Column(db.Text, nullable=True)
     survey_completed_at = db.Column(db.DateTime, nullable=True)
+    _preferences = db.Column(db.Text, nullable=True)
 
     def __init__(self, name, uid, password=None, email=None, phone=None, role="User"):
         self._name = name
@@ -83,6 +87,18 @@ class User(db.Model):
     def save_survey(self, answers):
         self._survey = json.dumps(answers)
         self.survey_completed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        return self
+
+    @property
+    def preferences(self):
+        ''' The user's site preferences with every field filled in (defaults for anything never saved) '''
+        saved = json.loads(self._preferences) if self._preferences else {}
+        return {**json.loads(json.dumps(DEFAULTS)), **saved}   # a fresh copy, so DEFAULTS is never changed
+
+    def save_preferences(self, prefs):
+        ''' Store preferences already checked by clean_preferences(); None goes back to the site as designed '''
+        self._preferences = json.dumps(prefs) if prefs is not None else None
         db.session.commit()
         return self
 
@@ -135,6 +151,7 @@ class User(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "survey": self.survey,
             "needs_survey": self._survey is None,
+            "preferences": self.preferences,
         }
 
     def is_seeded(self):
@@ -167,7 +184,7 @@ class User(db.Model):
 def add_missing_columns():
     """ create_all() never changes an existing table: add columns introduced after the database was made """
     existing = {column['name'] for column in inspect(db.engine).get_columns('users')}
-    added = {'_survey': 'TEXT', 'survey_completed_at': 'DATETIME'}
+    added = {'_survey': 'TEXT', 'survey_completed_at': 'DATETIME', '_preferences': 'TEXT'}
     with db.engine.begin() as connection:
         for name, sql_type in added.items():
             if name not in existing:

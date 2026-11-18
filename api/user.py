@@ -6,6 +6,10 @@ from flask import Blueprint, request, current_app, g, jsonify
 from flask_restful import Api, Resource
 
 from api.jwt_authorize import token_required
+from model.ai_theme import design_theme
+from model.chat import ChatError
+from model.preferences import PreferencesError, clean_preferences
+from model.rate_limit import seconds_until_allowed
 from model.survey import QUESTIONS, validate_survey
 from model.user import User
 
@@ -144,6 +148,39 @@ class UserAPI:
                 return {"message": error}, 400
             return jsonify(g.current_user.save_survey(answers).read())
 
+    class _Preferences(Resource):  # The current user's site preferences (model/preferences.py)
+        @token_required()
+        def get(self):
+            return jsonify(g.current_user.preferences)
+
+        @token_required()
+        def put(self):
+            """ Save the whole set of preferences (the Preferences page always sends every field) """
+            try:
+                prefs = clean_preferences(request.get_json(silent=True))
+            except PreferencesError as error:
+                return {"message": str(error)}, 400
+            return jsonify(g.current_user.save_preferences(prefs).preferences)
+
+        @token_required()
+        def delete(self):
+            """ Reset: back to the site as designed """
+            return jsonify(g.current_user.save_preferences(None).preferences)
+
+    class _AITheme(Resource):  # "Create with AI" on the Preferences page (model/ai_theme.py)
+        @token_required()
+        def post(self):
+            """ {prompt: "calm ocean"} -> {name, description, bg, text, accent, selectionColor, font, buttonStyle} """
+            # Shares the chat bubble's per-minute limit, keyed by account so a shared network isn't blocked
+            wait = seconds_until_allowed(f"user:{g.current_user.id}")
+            if wait:
+                return {"message": f"Too many requests. Please wait {wait} seconds and try again."}, 429, \
+                    {'Retry-After': str(wait)}
+            try:
+                return jsonify(design_theme((request.get_json(silent=True) or {}).get('prompt')))
+            except ChatError as error:
+                return {"message": str(error)}, error.status
+
     class _SurveyQuestions(Resource):  # The survey's questions (public: no answers in here)
         def get(self):
             return jsonify(QUESTIONS)
@@ -151,5 +188,7 @@ class UserAPI:
     api.add_resource(_ID, '/id')
     api.add_resource(_SurveyQuestions, '/survey')
     api.add_resource(_Survey, '/user/survey')
+    api.add_resource(_Preferences, '/user/preferences')
+    api.add_resource(_AITheme, '/user/preferences/ai-theme')
     api.add_resource(_CRUD, '/user')
     api.add_resource(_Security, '/authenticate')
