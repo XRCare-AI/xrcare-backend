@@ -4,6 +4,8 @@ services:
     build: .
     env_file:
       - .env # This file is optional; defaults will be used if it does not exist
+    environment:
+      - IS_PRODUCTION=true # HTTPS cross-site login cookie (SameSite=None; Secure)
     ports:
       - "8620:8620"
     volumes:
