@@ -25,6 +25,7 @@ app.config['FLASK_PORT'] = int(os.environ.get('FLASK_PORT') or 8620)
 allowed_origins = [
     'http://localhost:4100',
     'http://127.0.0.1:4100',
+    'https://xrcare.opencodingsociety.com',  # Deployed frontend
     'https://xrcare-ai.github.io',  # Deployed frontend (xrcare-frontend repo on GitHub Pages)
 ]
 # Any other deployed frontend(s), comma separated in .env
@@ -46,6 +47,8 @@ app.config['ADMINS'] = [
 ]
 app.config['USERS'] = [
     ('Rohan Chandra', 'rohanchandra'),
+    ('Ishan Srivastava', 'ishansrivastava'),
+    ('Emily Capua', 'emilycapua'),
 ]
 # Password for any seeded account without its own <UID>_PASSWORD
 app.config['DEFAULT_PASSWORD'] = os.environ.get('DEFAULT_PASSWORD') or 'password'

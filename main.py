@@ -14,6 +14,7 @@ from flask import render_template
 from __init__ import app
 from api.admin import admin
 from api.article import article_api
+from api.chat import chat_api
 from api.contact import contact_api
 from api.user import user_api
 from model.article import initArticles
@@ -26,6 +27,7 @@ app.register_blueprint(admin)
 app.register_blueprint(user_api)
 app.register_blueprint(contact_api)
 app.register_blueprint(article_api)
+app.register_blueprint(chat_api)
 
 
 @app.route('/')
