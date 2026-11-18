@@ -46,6 +46,8 @@ app.config['ADMINS'] = [
 ]
 app.config['USERS'] = [
     ('Rohan Chandra', 'rohanchandra'),
+    ('Ishan Srivastava', 'ishansrivastava'),
+    ('Emily Capua', 'emilycapua'),
 ]
 # Password for any seeded account without its own <UID>_PASSWORD
 app.config['DEFAULT_PASSWORD'] = os.environ.get('DEFAULT_PASSWORD') or 'password'
